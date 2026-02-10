@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data_processing.loader import load_and_clean
 from data_processing.classifier import classify_dataframe, apply_ai_classifications
-from pages import overview, products, clients, cities, temporal, costs, novelties, ai_status
+from pages import overview, products, clients, cities, temporal, costs, novelties, ai_status, pnl, agents, search
 
 # --- Configuración de la página ---
 st.set_page_config(
@@ -74,11 +74,14 @@ if st.session_state.get("apply_ai") and st.session_state.get("ai_classifications
 # --- Tabs de navegación ---
 tabs = st.tabs([
     "📊 Resumen",
+    "💵 P&L General",
+    "🔍 Buscador",
     "📦 Productos",
     "👤 Clientes",
     "🏙️ Ciudades",
     "⏱️ Tiempos",
     "💰 Costos",
+    "👔 Agentes",
     "⚠️ Novedades",
     "🤖 IA - Estatus",
 ])
@@ -87,22 +90,31 @@ with tabs[0]:
     overview.render(df)
 
 with tabs[1]:
-    products.render(df)
+    pnl.render(df)
 
 with tabs[2]:
-    clients.render(df)
+    search.render(df)
 
 with tabs[3]:
-    cities.render(df)
+    products.render(df)
 
 with tabs[4]:
-    temporal.render(df)
+    clients.render(df)
 
 with tabs[5]:
-    costs.render(df)
+    cities.render(df)
 
 with tabs[6]:
-    novelties.render(df)
+    temporal.render(df)
 
 with tabs[7]:
+    costs.render(df)
+
+with tabs[8]:
+    agents.render(df)
+
+with tabs[9]:
+    novelties.render(df)
+
+with tabs[10]:
     ai_status.render(df)

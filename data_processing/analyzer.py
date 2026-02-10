@@ -540,7 +540,7 @@ def get_agent_cancellations(df: pd.DataFrame) -> pd.DataFrame:
     return agents.sort_values("Cancelados", ascending=False)
 
 
-def get_product_search_metrics(df: pd.DataFrame, productos: list[str]) -> dict:
+def get_product_search_metrics(df: pd.DataFrame, productos) -> dict:
     """Métricas detalladas para uno o varios productos seleccionados."""
     filtered = df[df["PRODUCTO"].isin(productos)]
     enviados = filtered[filtered["TIENE_GUIA"]]

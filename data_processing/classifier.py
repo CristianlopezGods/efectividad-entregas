@@ -67,13 +67,13 @@ def classify_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_unknown_statuses(df: pd.DataFrame) -> list[str]:
+def get_unknown_statuses(df: pd.DataFrame) -> list:
     """Retorna lista de estatus únicos clasificados como DESCONOCIDO."""
     unknown = df[df["CATEGORIA"] == "DESCONOCIDO"]["ESTATUS"].unique().tolist()
     return sorted(unknown)
 
 
-def classify_with_ai(statuses: list[str], api_key: str) -> dict[str, str]:
+def classify_with_ai(statuses: list, api_key: str) -> dict:
     """
     Llama a Claude API para clasificar estatus desconocidos.
 
@@ -136,7 +136,7 @@ Sin explicaciones adicionales."""
         return {}
 
 
-def apply_ai_classifications(df: pd.DataFrame, ai_results: dict[str, str]) -> pd.DataFrame:
+def apply_ai_classifications(df: pd.DataFrame, ai_results: dict) -> pd.DataFrame:
     """Aplica las clasificaciones de IA al DataFrame."""
     if not ai_results:
         return df

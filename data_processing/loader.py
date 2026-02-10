@@ -17,7 +17,7 @@ def _parse_date(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, dayfirst=True, errors="coerce")
 
 
-def _find_column(df: pd.DataFrame, *patterns: str) -> str | None:
+def _find_column(df: pd.DataFrame, *patterns: str):
     """Busca una columna que contenga alguno de los patrones (case insensitive)."""
     for col in df.columns:
         col_upper = col.upper()

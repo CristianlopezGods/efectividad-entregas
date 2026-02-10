@@ -70,7 +70,7 @@ def _render_rentabilidad(df):
 
     st.subheader("Rentabilidad Real por Producto")
     st.caption(
-        "Ganancia de entregas exitosas - Pérdida de fletes por devoluciones (ida + vuelta)"
+        "Ganancia de entregas exitosas - Flete perdido en envíos devueltos"
     )
 
     min_envios = st.slider("Mínimo de envíos para mostrar", 1, 100, 5, key="min_env_rent")

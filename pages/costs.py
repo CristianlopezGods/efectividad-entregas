@@ -14,25 +14,23 @@ def render(df):
     costs = get_cost_analysis(df)
 
     st.subheader("Impacto Económico")
-    st.caption("Solo se cobra flete de envío en entregas y flete de devolución en devueltos")
+    st.caption("Flete de envío se cobra en todos los pedidos enviados")
 
     # KPIs de costos
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Flete Envío (entregas)", _fmt(costs["flete_entregas"]))
+        st.metric("Flete Envío (todos los envíos)", _fmt(costs["flete_envios"]))
     with col2:
-        st.metric("Flete Devolución (devueltos)", _fmt(costs["flete_devoluciones"]))
+        st.metric("Flete Perdido (envíos devueltos)", _fmt(costs["flete_devueltos"]))
     with col3:
-        st.metric("Fletes Total Pagados", _fmt(costs["fletes_total"]))
+        st.metric("Costo Producto (entregas)", _fmt(costs["costo_producto"]))
 
     st.divider()
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
-        st.metric("Costo Producto (entregas)", _fmt(costs["costo_producto"]))
-    with col2:
         st.metric("Ingreso Perdido (ventas devueltas)", _fmt(costs["ingreso_perdido"]))
-    with col3:
+    with col2:
         st.metric("Valor Pedidos en Tránsito", _fmt(costs["valor_inventario"]))
 
     st.divider()
@@ -45,7 +43,7 @@ def render(df):
         top_cities = costs["top_cities"]
         if not top_cities.empty:
             st.plotly_chart(
-                cost_loss_bar(top_cities, "Top 10 Pérdida Flete Dev por Ciudad", "CIUDAD DESTINO"),
+                cost_loss_bar(top_cities, "Top 10 Pérdida Flete por Ciudad", "CIUDAD DESTINO"),
                 use_container_width=True,
             )
             st.dataframe(
@@ -58,7 +56,7 @@ def render(df):
         top_products = costs["top_products"]
         if not top_products.empty:
             st.plotly_chart(
-                cost_loss_bar(top_products, "Top 10 Pérdida Flete Dev por Producto", "PRODUCTO"),
+                cost_loss_bar(top_products, "Top 10 Pérdida Flete por Producto", "PRODUCTO"),
                 use_container_width=True,
             )
             st.dataframe(

@@ -21,7 +21,7 @@ def render(df):
     with col1:
         st.metric("Ventas Brutas (entregas)", _fmt(pnl["ventas_brutas"]))
     with col2:
-        st.metric("Costos Totales", _fmt(pnl["costo_producto"] + pnl["fletes_total"] + pnl["comisiones"]))
+        st.metric("Costos Totales", _fmt(pnl["costo_producto"] + pnl["flete_envios"] + pnl["comisiones"]))
     with col3:
         st.metric(
             "Venta Neta (sin publicidad)",
@@ -43,24 +43,23 @@ def render(df):
     with col2:
         st.subheader("Costos")
         st.metric("Costo Producto (solo entregas)", _fmt(pnl["costo_producto"]))
-        st.metric("Flete Envío (solo entregas)", _fmt(pnl["flete_entregas"]))
-        st.metric("Flete Devolución (solo devueltos)", _fmt(pnl["flete_devoluciones"]))
+        st.metric("Flete Envío (todos los envíos)", _fmt(pnl["flete_envios"]))
         st.metric("Comisiones", _fmt(pnl["comisiones"]))
-        st.caption(f"{pnl['total_devoluciones']:,} devoluciones")
+        st.caption(f"{pnl['total_envios']:,} envíos — {pnl['total_devoluciones']:,} devoluciones")
+        st.caption(f"Flete perdido en devoluciones: {_fmt(pnl['flete_devueltos'])}")
 
     st.divider()
 
     # Gráfico waterfall
-    labels = ["Ventas Brutas", "Costo Producto", "Flete Envío", "Flete Devolución", "Comisiones", "Venta Neta"]
+    labels = ["Ventas Brutas", "Costo Producto", "Flete Envío", "Comisiones", "Venta Neta"]
     values = [
         pnl["ventas_brutas"],
         -pnl["costo_producto"],
-        -pnl["flete_entregas"],
-        -pnl["flete_devoluciones"],
+        -pnl["flete_envios"],
         -pnl["comisiones"],
         pnl["venta_neta"],
     ]
-    measures = ["absolute", "relative", "relative", "relative", "relative", "total"]
+    measures = ["absolute", "relative", "relative", "relative", "total"]
 
     fig = go.Figure(go.Waterfall(
         name="P&L",

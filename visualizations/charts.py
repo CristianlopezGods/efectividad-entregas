@@ -227,6 +227,31 @@ def carrier_pie(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def profitability_bar(df: pd.DataFrame, n: int = 15) -> go.Figure:
+    """Top productos con peor y mejor rentabilidad real."""
+    # Peores 15
+    worst = df.head(n).copy()
+    worst = worst.sort_values("Rentabilidad Real", ascending=True)
+
+    colors = ["#e74c3c" if v < 0 else "#27ae60" for v in worst["Rentabilidad Real"]]
+
+    fig = go.Figure(go.Bar(
+        x=worst["Rentabilidad Real"],
+        y=worst["PRODUCTO"],
+        orientation="h",
+        marker_color=colors,
+        text=worst["Rentabilidad Real"].apply(lambda x: f"${x:,}"),
+        textposition="outside",
+    ))
+    fig.update_layout(
+        title=f"Top {n} Productos - Peor Rentabilidad Real",
+        xaxis_title="Rentabilidad Real ($)",
+        height=max(400, n * 35),
+        margin=dict(t=40, b=40, l=200, r=80),
+    )
+    return fig
+
+
 def cost_loss_bar(top_df: pd.DataFrame, title: str, y_col: str) -> go.Figure:
     """Barras horizontales para top pérdidas por ciudad o producto."""
     top = top_df.sort_values("Pérdida Total", ascending=True).copy()

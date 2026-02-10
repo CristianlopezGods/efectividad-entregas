@@ -121,6 +121,56 @@ def get_product_analysis(df: pd.DataFrame) -> pd.DataFrame:
                       "Flete Prom", "Precio/Unidad", "Acción"]]
 
 
+def get_product_profitability(df: pd.DataFrame) -> pd.DataFrame:
+    """Rentabilidad real por producto: ganancia de entregas - pérdida de devoluciones."""
+    enviados = df[df["TIENE_GUIA"]]
+
+    # Ganancia de entregas exitosas (columna GANANCIA del Excel)
+    entregados = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
+    ganancia_por_prod = entregados.groupby("PRODUCTO")["GANANCIA"].sum().reset_index()
+    ganancia_por_prod.columns = ["PRODUCTO", "Ganancia Entregas"]
+
+    # Pérdida por devoluciones: flete envío + costo devolución
+    devueltos = enviados[enviados["CATEGORIA"] == "DEVOLUCION"].copy()
+    # Si COSTO DEVOLUCION FLETE es 0, usar PRECIO FLETE como costo de retorno
+    devueltos["Costo_Devolucion"] = np.where(
+        devueltos["COSTO DEVOLUCION FLETE"] > 0,
+        devueltos["PRECIO FLETE"] + devueltos["COSTO DEVOLUCION FLETE"],
+        devueltos["PRECIO FLETE"] * 2,
+    )
+    perdida_por_prod = devueltos.groupby("PRODUCTO")["Costo_Devolucion"].sum().reset_index()
+    perdida_por_prod.columns = ["PRODUCTO", "Pérdida Devoluciones"]
+
+    # Conteos
+    conteos = enviados.groupby("PRODUCTO").agg(
+        Envíos=("ID", "count"),
+        Entregas=("CATEGORIA", lambda x: (x == "ENTREGADO").sum()),
+        Devoluciones=("CATEGORIA", lambda x: (x == "DEVOLUCION").sum()),
+    ).reset_index()
+
+    # Merge todo
+    result = conteos.merge(ganancia_por_prod, on="PRODUCTO", how="left")
+    result = result.merge(perdida_por_prod, on="PRODUCTO", how="left")
+    result["Ganancia Entregas"] = result["Ganancia Entregas"].fillna(0).astype(int)
+    result["Pérdida Devoluciones"] = result["Pérdida Devoluciones"].fillna(0).astype(int)
+
+    # Rentabilidad real
+    result["Rentabilidad Real"] = result["Ganancia Entregas"] - result["Pérdida Devoluciones"]
+
+    # Rentabilidad por envío
+    result["Rent/Envío"] = np.where(
+        result["Envíos"] > 0,
+        np.floor(result["Rentabilidad Real"] / result["Envíos"]).astype(int),
+        0,
+    )
+
+    result = result.sort_values("Rentabilidad Real", ascending=True)
+
+    return result[["PRODUCTO", "Envíos", "Entregas", "Devoluciones",
+                    "Ganancia Entregas", "Pérdida Devoluciones",
+                    "Rentabilidad Real", "Rent/Envío"]]
+
+
 def get_client_analysis(df: pd.DataFrame) -> dict:
     """Análisis por cliente (teléfono)."""
     col_tel = None

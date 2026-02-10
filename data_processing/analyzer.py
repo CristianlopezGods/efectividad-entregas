@@ -1,4 +1,12 @@
-"""Cálculos y métricas de negocio sobre el DataFrame clasificado."""
+"""Cálculos y métricas de negocio sobre el DataFrame clasificado.
+
+REGLAS DE NEGOCIO (dropshipping):
+- Solo se cobra flete de envío (T) en pedidos ENTREGADOS
+- Solo se cobra flete de devolución (U) en pedidos DEVUELTOS
+- NO se cobra flete en cancelados, rechazados, pendientes ni en proceso de indemnización
+- Costo de producto solo se paga cuando el pedido es ENTREGADO
+- Venta neta = Ventas - Costo producto - Fletes - Publicidad
+"""
 
 import pandas as pd
 import numpy as np
@@ -13,68 +21,82 @@ from config import (
 )
 
 
-def get_general_metrics(df: pd.DataFrame) -> dict:
+# ============================================================
+# HELPERS
+# ============================================================
+
+def _entregados(df):
+    return df[df["CATEGORIA"] == "ENTREGADO"]
+
+def _devueltos(df):
+    return df[df["CATEGORIA"] == "DEVOLUCION"]
+
+def _enviados(df):
+    return df[df["TIENE_GUIA"]]
+
+
+# ============================================================
+# GENERAL
+# ============================================================
+
+def get_general_metrics(df):
     """KPIs generales del negocio."""
     total = len(df)
-    enviados = df[df["TIENE_GUIA"]].shape[0]
-    entregados = df[df["CATEGORIA"] == "ENTREGADO"].shape[0]
-    devoluciones = df[df["CATEGORIA"] == "DEVOLUCION"].shape[0]
-    en_proceso = df[df["CATEGORIA"] == "EN PROCESO"].shape[0]
-    nunca_enviados = df[df["CATEGORIA"] == "NUNCA ENVIADO"].shape[0]
-    pendientes = df[df["CATEGORIA"] == "PENDIENTE ATASCADO"].shape[0]
+    enviados = _enviados(df)
+    ent = _entregados(df)
+    dev = _devueltos(df)
+    n_enviados = len(enviados)
+    n_entregados = len(ent)
+    n_devoluciones = len(dev)
+    n_en_proceso = len(df[df["CATEGORIA"] == "EN PROCESO"])
+    n_nunca = len(df[df["CATEGORIA"] == "NUNCA ENVIADO"])
+    n_pendientes = len(df[df["CATEGORIA"] == "PENDIENTE ATASCADO"])
 
-    tasa_conversion = enviados / total if total > 0 else 0
-    tasa_exito = entregados / enviados if enviados > 0 else 0
-    tasa_devolucion = devoluciones / enviados if enviados > 0 else 0
+    tasa_conversion = n_enviados / total if total > 0 else 0
+    tasa_exito = n_entregados / n_enviados if n_enviados > 0 else 0
+    tasa_devolucion = n_devoluciones / n_enviados if n_enviados > 0 else 0
 
-    flete_promedio = int(np.floor(df[df["TIENE_GUIA"]]["PRECIO FLETE"].mean())) if enviados > 0 else 0
+    # Flete promedio solo de entregados (lo que realmente se paga)
+    flete_prom = int(np.floor(ent["PRECIO FLETE"].mean())) if n_entregados > 0 else 0
 
-    # Pérdida total por devoluciones (flete envío + costo devolución)
-    dev_df = df[df["CATEGORIA"] == "DEVOLUCION"]
-    perdida_flete = dev_df["PRECIO FLETE"].sum()
-    perdida_devolucion = dev_df["COSTO DEVOLUCION FLETE"].sum()
-    # Si costo_devolucion_flete = 0, usar flete × 2
-    dev_sin_costo = dev_df[dev_df["COSTO DEVOLUCION FLETE"] == 0]
-    perdida_devolucion += dev_sin_costo["PRECIO FLETE"].sum()
-    perdida_total = int(perdida_flete + perdida_devolucion)
+    # Pérdida = solo flete de devolución (U)
+    perdida_total = int(dev["COSTO DEVOLUCION FLETE"].sum())
 
     # Demorados y atascados
     hoy = pd.Timestamp(datetime.now().date())
-    enviados_df = df[(df["TIENE_GUIA"]) & (df["CATEGORIA"] == "EN PROCESO")]
-    if not enviados_df.empty and enviados_df["FECHA GUIA GENERADA"].notna().any():
-        enviados_df = enviados_df.copy()
-        enviados_df["DIAS_TRANSITO"] = (hoy - enviados_df["FECHA GUIA GENERADA"]).dt.days
-        demorados = int((enviados_df["DIAS_TRANSITO"] > UMBRAL_DIAS_DEMORADO).sum())
+    en_proc = df[(df["TIENE_GUIA"]) & (df["CATEGORIA"] == "EN PROCESO")].copy()
+    if not en_proc.empty and en_proc["FECHA GUIA GENERADA"].notna().any():
+        en_proc["DIAS_TRANSITO"] = (hoy - en_proc["FECHA GUIA GENERADA"]).dt.days
+        demorados = int((en_proc["DIAS_TRANSITO"] > UMBRAL_DIAS_DEMORADO).sum())
     else:
         demorados = 0
 
-    pend_df = df[df["CATEGORIA"] == "PENDIENTE ATASCADO"]
-    if not pend_df.empty and pend_df["FECHA"].notna().any():
-        pend_df = pend_df.copy()
-        pend_df["DIAS_ESPERA"] = (hoy - pend_df["FECHA"]).dt.days
-        atascados = int((pend_df["DIAS_ESPERA"] > UMBRAL_DIAS_ATASCADO).sum())
+    pend = df[df["CATEGORIA"] == "PENDIENTE ATASCADO"].copy()
+    if not pend.empty and pend["FECHA"].notna().any():
+        pend["DIAS_ESPERA"] = (hoy - pend["FECHA"]).dt.days
+        atascados = int((pend["DIAS_ESPERA"] > UMBRAL_DIAS_ATASCADO).sum())
     else:
         atascados = 0
 
     return {
         "total_ordenes": total,
-        "envios_reales": enviados,
-        "entregados": entregados,
-        "devoluciones": devoluciones,
-        "en_proceso": en_proceso,
-        "nunca_enviados": nunca_enviados,
-        "pendientes": pendientes,
+        "envios_reales": n_enviados,
+        "entregados": n_entregados,
+        "devoluciones": n_devoluciones,
+        "en_proceso": n_en_proceso,
+        "nunca_enviados": n_nunca,
+        "pendientes": n_pendientes,
         "tasa_conversion": tasa_conversion,
         "tasa_exito": tasa_exito,
         "tasa_devolucion": tasa_devolucion,
-        "flete_promedio": flete_promedio,
+        "flete_promedio": flete_prom,
         "perdida_total": perdida_total,
         "demorados": demorados,
         "atascados": atascados,
     }
 
 
-def get_status_distribution(df: pd.DataFrame) -> pd.DataFrame:
+def get_status_distribution(df):
     """Distribución por categoría clasificada."""
     dist = df["CATEGORIA"].value_counts().reset_index()
     dist.columns = ["Categoría", "Cantidad"]
@@ -82,10 +104,50 @@ def get_status_distribution(df: pd.DataFrame) -> pd.DataFrame:
     return dist
 
 
-def get_product_analysis(df: pd.DataFrame) -> pd.DataFrame:
-    """Análisis por producto."""
-    # Solo considerar órdenes que fueron enviadas
-    enviados = df[df["TIENE_GUIA"]]
+# ============================================================
+# P&L GENERAL
+# ============================================================
+
+def get_pnl_general(df):
+    """Resumen de ganancias y pérdidas generales del negocio.
+
+    Ventas Netas = Ventas Brutas - Costo Producto - Flete Entregas - Flete Devoluciones - Publicidad
+    """
+    ent = _entregados(df)
+    dev = _devueltos(df)
+
+    ventas_brutas = int(ent["TOTAL DE LA ORDEN"].sum())
+    costo_producto = int(ent["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in ent.columns else int(ent["PRECIO PROVEEDOR"].sum())
+    flete_entregas = int(ent["PRECIO FLETE"].sum())
+    flete_devoluciones = int(dev["COSTO DEVOLUCION FLETE"].sum())
+    comisiones = int(ent["COMISION"].sum()) if "COMISION" in ent.columns else 0
+    ganancia_col = int(ent["GANANCIA"].sum())
+
+    fletes_total = flete_entregas + flete_devoluciones
+    venta_neta = ventas_brutas - costo_producto - fletes_total - comisiones
+
+    return {
+        "ventas_brutas": ventas_brutas,
+        "costo_producto": costo_producto,
+        "flete_entregas": flete_entregas,
+        "flete_devoluciones": flete_devoluciones,
+        "fletes_total": fletes_total,
+        "comisiones": comisiones,
+        "ganancia_col": ganancia_col,
+        "venta_neta": venta_neta,
+        "total_entregas": len(ent),
+        "total_devoluciones": len(dev),
+        "total_envios": len(_enviados(df)),
+    }
+
+
+# ============================================================
+# PRODUCTOS
+# ============================================================
+
+def get_product_analysis(df):
+    """Análisis por producto: tasas de devolución."""
+    enviados = _enviados(df)
 
     products = enviados.groupby("PRODUCTO").agg(
         Envíos=("ID", "count"),
@@ -109,9 +171,8 @@ def get_product_analysis(df: pd.DataFrame) -> pd.DataFrame:
         0,
     )
 
-    # Acción recomendada
     products["Acción"] = products["% Devolución"].apply(
-        lambda x: "🔴 PAUSAR" if x > UMBRAL_DEVOLUCION_PAUSAR * 100 else "✅ OK"
+        lambda x: "PAUSAR" if x > UMBRAL_DEVOLUCION_PAUSAR * 100 else "OK"
     )
 
     products = products.sort_values("% Devolución", ascending=False)
@@ -121,25 +182,24 @@ def get_product_analysis(df: pd.DataFrame) -> pd.DataFrame:
                       "Flete Prom", "Precio/Unidad", "Acción"]]
 
 
-def get_product_profitability(df: pd.DataFrame) -> pd.DataFrame:
-    """Rentabilidad real por producto: ganancia de entregas - pérdida de devoluciones."""
-    enviados = df[df["TIENE_GUIA"]]
+def get_product_profitability(df):
+    """Rentabilidad real por producto.
 
-    # Ganancia de entregas exitosas (columna GANANCIA del Excel)
+    Ganancia = GANANCIA de entregas exitosas
+    Pérdida = COSTO DEVOLUCION FLETE de devoluciones (solo U)
+    Rentabilidad = Ganancia - Pérdida
+    """
+    enviados = _enviados(df)
     entregados = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
-    ganancia_por_prod = entregados.groupby("PRODUCTO")["GANANCIA"].sum().reset_index()
-    ganancia_por_prod.columns = ["PRODUCTO", "Ganancia Entregas"]
+    devueltos = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
 
-    # Pérdida por devoluciones: flete envío + costo devolución
-    devueltos = enviados[enviados["CATEGORIA"] == "DEVOLUCION"].copy()
-    # Si COSTO DEVOLUCION FLETE es 0, usar PRECIO FLETE como costo de retorno
-    devueltos["Costo_Devolucion"] = np.where(
-        devueltos["COSTO DEVOLUCION FLETE"] > 0,
-        devueltos["PRECIO FLETE"] + devueltos["COSTO DEVOLUCION FLETE"],
-        devueltos["PRECIO FLETE"] * 2,
-    )
-    perdida_por_prod = devueltos.groupby("PRODUCTO")["Costo_Devolucion"].sum().reset_index()
-    perdida_por_prod.columns = ["PRODUCTO", "Pérdida Devoluciones"]
+    # Ganancia por producto
+    gan = entregados.groupby("PRODUCTO")["GANANCIA"].sum().reset_index()
+    gan.columns = ["PRODUCTO", "Ganancia Entregas"]
+
+    # Pérdida por producto: solo flete devolución (U)
+    per = devueltos.groupby("PRODUCTO")["COSTO DEVOLUCION FLETE"].sum().reset_index()
+    per.columns = ["PRODUCTO", "Pérdida Devoluciones"]
 
     # Conteos
     conteos = enviados.groupby("PRODUCTO").agg(
@@ -148,61 +208,57 @@ def get_product_profitability(df: pd.DataFrame) -> pd.DataFrame:
         Devoluciones=("CATEGORIA", lambda x: (x == "DEVOLUCION").sum()),
     ).reset_index()
 
-    # Merge todo
-    result = conteos.merge(ganancia_por_prod, on="PRODUCTO", how="left")
-    result = result.merge(perdida_por_prod, on="PRODUCTO", how="left")
+    result = conteos.merge(gan, on="PRODUCTO", how="left")
+    result = result.merge(per, on="PRODUCTO", how="left")
     result["Ganancia Entregas"] = result["Ganancia Entregas"].fillna(0).astype(int)
     result["Pérdida Devoluciones"] = result["Pérdida Devoluciones"].fillna(0).astype(int)
-
-    # Rentabilidad real
-    result["Rentabilidad Real"] = result["Ganancia Entregas"] - result["Pérdida Devoluciones"]
-
-    # Rentabilidad por envío
+    result["Rentabilidad"] = result["Ganancia Entregas"] - result["Pérdida Devoluciones"]
     result["Rent/Envío"] = np.where(
         result["Envíos"] > 0,
-        np.floor(result["Rentabilidad Real"] / result["Envíos"]).astype(int),
+        np.floor(result["Rentabilidad"] / result["Envíos"]).astype(int),
         0,
     )
 
-    result = result.sort_values("Rentabilidad Real", ascending=True)
-
-    return result[["PRODUCTO", "Envíos", "Entregas", "Devoluciones",
-                    "Ganancia Entregas", "Pérdida Devoluciones",
-                    "Rentabilidad Real", "Rent/Envío"]]
+    result = result.sort_values("Rentabilidad", ascending=True)
+    return result
 
 
-def get_client_analysis(df: pd.DataFrame) -> dict:
+# ============================================================
+# CLIENTES
+# ============================================================
+
+def get_client_analysis(df):
     """Análisis por cliente (teléfono)."""
     col_tel = None
     for c in df.columns:
-        if "FONO" in c.upper() or "TELEFONO" in c.upper() or "TELÉFONO" in c.upper():
+        if "FONO" in c.upper() or "TELEFONO" in c.upper():
             col_tel = c
             break
     if col_tel is None:
-        col_tel = df.columns[5]  # Fallback to column index 5
+        col_tel = df.columns[5]
 
-    enviados = df[df["TIENE_GUIA"]]
+    enviados = _enviados(df)
 
     clients = enviados.groupby(col_tel).agg(
         Nombre=("NOMBRE CLIENTE", "first"),
         Total_Pedidos=("ID", "count"),
         Devoluciones=("CATEGORIA", lambda x: (x == "DEVOLUCION").sum()),
         Entregas=("CATEGORIA", lambda x: (x == "ENTREGADO").sum()),
-        Perdida_Flete=("PRECIO FLETE", lambda x: x[enviados.loc[x.index, "CATEGORIA"] == "DEVOLUCION"].sum()),
     ).reset_index()
 
     clients.rename(columns={col_tel: "Teléfono"}, inplace=True)
     clients["% Devolución"] = (clients["Devoluciones"] / clients["Total_Pedidos"] * 100).round(1)
 
-    # Costo devolución: flete × 2 por cada devolución
-    clients["Monto Perdido"] = (clients["Perdida_Flete"] * 2).astype(int)
+    # Pérdida: solo flete devolución (U) por cliente
+    dev = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
+    dev_loss = dev.groupby(col_tel)["COSTO DEVOLUCION FLETE"].sum().reset_index()
+    dev_loss.columns = ["Teléfono", "Monto Perdido"]
+    clients = clients.merge(dev_loss, on="Teléfono", how="left")
+    clients["Monto Perdido"] = clients["Monto Perdido"].fillna(0).astype(int)
 
-    # Clientes a bloquear: 3+ devoluciones
     bloquear = clients[clients["Devoluciones"] >= UMBRAL_DEVOLUCIONES_BLOQUEAR].sort_values(
         "Devoluciones", ascending=False
     )
-
-    # Clientes a premiar: más entregas exitosas
     premiar = clients[clients["Entregas"] > 0].sort_values(
         "Entregas", ascending=False
     ).head(20)
@@ -215,9 +271,13 @@ def get_client_analysis(df: pd.DataFrame) -> dict:
     }
 
 
-def get_city_analysis(df: pd.DataFrame) -> dict:
+# ============================================================
+# CIUDADES
+# ============================================================
+
+def get_city_analysis(df):
     """Análisis por ciudad: por tasa % y por cantidad total."""
-    enviados = df[df["TIENE_GUIA"]]
+    enviados = _enviados(df)
 
     cities = enviados.groupby("CIUDAD DESTINO").agg(
         Envíos=("ID", "count"),
@@ -240,18 +300,53 @@ def get_city_analysis(df: pd.DataFrame) -> dict:
     return {"por_tasa": by_rate, "por_total": by_total}
 
 
-def get_temporal_analysis(df: pd.DataFrame) -> dict:
+def get_city_profitability(df):
+    """Rentabilidad por ciudad.
+
+    Ganancia = GANANCIA de entregas
+    Pérdida = COSTO DEVOLUCION FLETE de devoluciones (solo U)
+    """
+    ent = _entregados(df)
+    dev = _devueltos(df)
+
+    gan = ent.groupby("CIUDAD DESTINO").agg(
+        Entregas=("ID", "count"),
+        Ganancia=("GANANCIA", "sum"),
+    ).reset_index()
+
+    per = dev.groupby("CIUDAD DESTINO").agg(
+        Devoluciones=("ID", "count"),
+        Pérdida=("COSTO DEVOLUCION FLETE", "sum"),
+    ).reset_index()
+
+    env = _enviados(df).groupby("CIUDAD DESTINO").agg(
+        Envíos=("ID", "count"),
+    ).reset_index()
+
+    result = env.merge(gan, on="CIUDAD DESTINO", how="left")
+    result = result.merge(per, on="CIUDAD DESTINO", how="left")
+    for col in ["Entregas", "Ganancia", "Devoluciones", "Pérdida"]:
+        result[col] = result[col].fillna(0).astype(int)
+    result["Rentabilidad"] = result["Ganancia"] - result["Pérdida"]
+    result["% Devolución"] = (result["Devoluciones"] / result["Envíos"] * 100).round(1)
+    result = result.sort_values("Rentabilidad", ascending=True)
+    return result
+
+
+# ============================================================
+# TEMPORAL
+# ============================================================
+
+def get_temporal_analysis(df):
     """Análisis temporal: pedidos demorados y atascados."""
     hoy = pd.Timestamp(datetime.now().date())
 
-    # Demorados: enviados en proceso con >7 días
     en_proceso = df[(df["TIENE_GUIA"]) & (df["CATEGORIA"] == "EN PROCESO")].copy()
     demorados_df = pd.DataFrame()
     if not en_proceso.empty and en_proceso["FECHA GUIA GENERADA"].notna().any():
         en_proceso["Días en Tránsito"] = (hoy - en_proceso["FECHA GUIA GENERADA"]).dt.days
         demorados_df = en_proceso[en_proceso["Días en Tránsito"] > UMBRAL_DIAS_DEMORADO].copy()
 
-    # Rangos de demorados
     rangos_dem = []
     for min_d, max_d, label in RANGOS_DEMORADOS:
         count = len(demorados_df[
@@ -260,14 +355,12 @@ def get_temporal_analysis(df: pd.DataFrame) -> dict:
         ]) if not demorados_df.empty else 0
         rangos_dem.append({"Rango": label, "Cantidad": count})
 
-    # Atascados: pendientes con >3 días
     pendientes = df[df["CATEGORIA"] == "PENDIENTE ATASCADO"].copy()
     atascados_df = pd.DataFrame()
     if not pendientes.empty and pendientes["FECHA"].notna().any():
         pendientes["Días Esperando"] = (hoy - pendientes["FECHA"]).dt.days
         atascados_df = pendientes[pendientes["Días Esperando"] > UMBRAL_DIAS_ATASCADO].copy()
 
-    # Rangos de atascados
     rangos_atas = []
     for min_d, max_d, label in RANGOS_ATASCADOS:
         count = len(atascados_df[
@@ -276,12 +369,10 @@ def get_temporal_analysis(df: pd.DataFrame) -> dict:
         ]) if not atascados_df.empty else 0
         rangos_atas.append({"Rango": label, "Cantidad": count})
 
-    # Detalle de demorados
     dem_cols = ["ID", "PRODUCTO", "ESTATUS", "CIUDAD DESTINO", "TRANSPORTADORA",
                 "FECHA GUIA GENERADA", "Días en Tránsito"]
     dem_detail = demorados_df[dem_cols].sort_values("Días en Tránsito", ascending=False) if not demorados_df.empty else pd.DataFrame(columns=dem_cols)
 
-    # Detalle de atascados
     atas_cols = ["ID", "PRODUCTO", "CIUDAD DESTINO", "FECHA", "Días Esperando"]
     atas_detail = atascados_df[atas_cols].sort_values("Días Esperando", ascending=False) if not atascados_df.empty else pd.DataFrame(columns=atas_cols)
 
@@ -293,90 +384,83 @@ def get_temporal_analysis(df: pd.DataFrame) -> dict:
     }
 
 
-def get_cost_analysis(df: pd.DataFrame) -> dict:
-    """Análisis de costos e impacto económico."""
-    enviados = df[df["TIENE_GUIA"]]
-    dev = df[df["CATEGORIA"] == "DEVOLUCION"]
+# ============================================================
+# COSTOS
+# ============================================================
 
-    # Costo total fletes de envíos reales
-    costo_fletes = int(enviados["PRECIO FLETE"].sum())
+def get_cost_analysis(df):
+    """Análisis de costos e impacto económico.
 
-    # Pérdida por devoluciones
-    perdida_flete_envio = int(dev["PRECIO FLETE"].sum())
-    perdida_flete_devolucion = int(dev["COSTO DEVOLUCION FLETE"].sum())
-    dev_sin_costo = dev[dev["COSTO DEVOLUCION FLETE"] == 0]
-    perdida_flete_devolucion += int(dev_sin_costo["PRECIO FLETE"].sum())
-    perdida_total_fletes = perdida_flete_envio + perdida_flete_devolucion
+    Solo se cobra flete T en entregados y flete U en devueltos.
+    """
+    ent = _entregados(df)
+    dev = _devueltos(df)
 
-    # Valor de productos devueltos (precio proveedor)
-    valor_productos_devueltos = int(dev["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in dev.columns else int(dev["PRECIO PROVEEDOR"].sum())
+    flete_entregas = int(ent["PRECIO FLETE"].sum())
+    flete_devoluciones = int(dev["COSTO DEVOLUCION FLETE"].sum())
+    fletes_total = flete_entregas + flete_devoluciones
 
-    # Inventario atascado (pendientes + en proceso)
-    en_proceso = df[df["CATEGORIA"].isin(["EN PROCESO", "PENDIENTE ATASCADO"])]
-    valor_inventario_atascado = int(en_proceso["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in en_proceso.columns else int(en_proceso["PRECIO PROVEEDOR"].sum())
-
-    # Ingreso perdido por devoluciones (ventas que no se concretaron)
+    costo_producto = int(ent["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in ent.columns else int(ent["PRECIO PROVEEDOR"].sum())
     ingreso_perdido = int(dev["TOTAL DE LA ORDEN"].sum())
 
-    # Top 10 pérdida por ciudad
+    # Inventario atascado
+    en_proceso = df[df["CATEGORIA"].isin(["EN PROCESO", "PENDIENTE ATASCADO"])]
+    valor_inventario = int(en_proceso["TOTAL DE LA ORDEN"].sum())
+
+    # Top 10 pérdida por ciudad (flete devolución U)
     dev_city = dev.groupby("CIUDAD DESTINO").agg(
         Devoluciones=("ID", "count"),
-        Pérdida_Flete=("PRECIO FLETE", "sum"),
+        Pérdida_Flete=("COSTO DEVOLUCION FLETE", "sum"),
     ).reset_index()
-    dev_city["Pérdida Total"] = (dev_city["Pérdida_Flete"] * 2).astype(int)
+    dev_city.rename(columns={"Pérdida_Flete": "Pérdida Total"}, inplace=True)
     top_cities = dev_city.sort_values("Pérdida Total", ascending=False).head(10)
 
     # Top 10 pérdida por producto
     dev_prod = dev.groupby("PRODUCTO").agg(
         Devoluciones=("ID", "count"),
-        Pérdida_Flete=("PRECIO FLETE", "sum"),
-        Valor_Producto=("PRECIO PROVEEDOR X CANTIDAD", "sum") if "PRECIO PROVEEDOR X CANTIDAD" in dev.columns else ("PRECIO PROVEEDOR", "sum"),
+        Pérdida_Flete=("COSTO DEVOLUCION FLETE", "sum"),
     ).reset_index()
-    dev_prod["Pérdida Total"] = (dev_prod["Pérdida_Flete"] * 2).astype(int)
+    dev_prod.rename(columns={"Pérdida_Flete": "Pérdida Total"}, inplace=True)
     top_products = dev_prod.sort_values("Pérdida Total", ascending=False).head(10)
 
     return {
-        "costo_fletes": costo_fletes,
-        "perdida_flete_envio": perdida_flete_envio,
-        "perdida_flete_devolucion": perdida_flete_devolucion,
-        "perdida_total_fletes": perdida_total_fletes,
-        "valor_productos_devueltos": valor_productos_devueltos,
-        "valor_inventario_atascado": valor_inventario_atascado,
+        "flete_entregas": flete_entregas,
+        "flete_devoluciones": flete_devoluciones,
+        "fletes_total": fletes_total,
+        "costo_producto": costo_producto,
         "ingreso_perdido": ingreso_perdido,
+        "valor_inventario": valor_inventario,
         "top_cities": top_cities,
         "top_products": top_products,
     }
 
 
-def get_novelty_analysis(df: pd.DataFrame) -> dict:
+# ============================================================
+# NOVEDADES
+# ============================================================
+
+def get_novelty_analysis(df):
     """Análisis de novedades, soluciones y tasa de resolución."""
     with_novelty = df[df["NOVEDAD"].notna() & (df["NOVEDAD"] != "")]
 
     if with_novelty.empty:
         return {
-            "total_novedades": 0,
-            "resueltas": 0,
-            "no_resueltas": 0,
-            "tasa_resolucion": 0,
-            "top_novedades": pd.DataFrame(),
-            "top_soluciones": pd.DataFrame(),
-            "novedades_por_tipo": pd.DataFrame(),
+            "total_novedades": 0, "resueltas": 0, "no_resueltas": 0,
+            "tasa_resolucion": 0, "top_novedades": pd.DataFrame(),
+            "top_soluciones": pd.DataFrame(), "novedades_por_tipo": pd.DataFrame(),
         }
 
     total = len(with_novelty)
-
-    # Tasa de resolución
     col_sol = "FUE SOLUCIONADA LA NOVEDAD"
     resueltas = len(with_novelty[with_novelty[col_sol] == "SI"]) if col_sol in with_novelty.columns else 0
     no_resueltas = total - resueltas
     tasa = resueltas / total if total > 0 else 0
 
-    # Top novedades más frecuentes
     top_nov = with_novelty["NOVEDAD"].value_counts().reset_index()
     top_nov.columns = ["Novedad", "Cantidad"]
     top_nov["Porcentaje"] = (top_nov["Cantidad"] / total * 100).round(1)
 
-    # Top soluciones - buscar columna que sea la SOLUCIÓN texto (no hora ni fecha)
+    # Buscar columna SOLUCIÓN (texto, no hora ni fecha)
     col_solucion = None
     for c in df.columns:
         c_upper = c.upper()
@@ -391,7 +475,6 @@ def get_novelty_analysis(df: pd.DataFrame) -> dict:
             top_sol = with_sol[col_solucion].value_counts().head(5).reset_index()
             top_sol.columns = ["Solución", "Cantidad"]
 
-    # Novedades resueltas vs no resueltas por tipo
     if col_sol in with_novelty.columns:
         nov_tipo = with_novelty.groupby("NOVEDAD").agg(
             Total=("ID", "count"),
@@ -404,115 +487,75 @@ def get_novelty_analysis(df: pd.DataFrame) -> dict:
         nov_tipo = pd.DataFrame()
 
     return {
-        "total_novedades": total,
-        "resueltas": resueltas,
-        "no_resueltas": no_resueltas,
-        "tasa_resolucion": tasa,
-        "top_novedades": top_nov,
-        "top_soluciones": top_sol,
+        "total_novedades": total, "resueltas": resueltas,
+        "no_resueltas": no_resueltas, "tasa_resolucion": tasa,
+        "top_novedades": top_nov, "top_soluciones": top_sol,
         "novedades_por_tipo": nov_tipo,
     }
 
 
-def get_pnl_general(df: pd.DataFrame) -> dict:
-    """Resumen de ganancias y pérdidas generales del negocio."""
-    enviados = df[df["TIENE_GUIA"]]
-    entregados = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
-    devueltos = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
+# ============================================================
+# TRANSPORTADORAS
+# ============================================================
 
-    # Ingresos: suma de TOTAL DE LA ORDEN de entregas exitosas
-    ingreso_bruto = int(entregados["TOTAL DE LA ORDEN"].sum())
+def get_carrier_analysis(df):
+    """Análisis detallado por transportadora: fletes, tasas, costos."""
+    enviados = _enviados(df)
 
-    # Costo productos entregados
-    costo_productos = int(entregados["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in entregados.columns else int(entregados["PRECIO PROVEEDOR"].sum())
+    carriers = []
+    for t in df["TRANSPORTADORA"].unique():
+        sub = enviados[enviados["TRANSPORTADORA"] == t]
+        if len(sub) < 5:
+            continue
 
-    # Costo fletes de todos los envíos
-    costo_fletes_envio = int(enviados["PRECIO FLETE"].sum())
+        sub_ent = sub[sub["CATEGORIA"] == "ENTREGADO"]
+        sub_dev = sub[sub["CATEGORIA"] == "DEVOLUCION"]
+        sub_proc = sub[sub["CATEGORIA"] == "EN PROCESO"]
 
-    # Ganancia bruta (columna GANANCIA de entregas)
-    ganancia_entregas = int(entregados["GANANCIA"].sum())
+        n_env = len(sub)
+        n_ent = len(sub_ent)
+        n_dev = len(sub_dev)
+        n_proc = len(sub_proc)
 
-    # Pérdida por devoluciones (flete ida + vuelta)
-    dev_copy = devueltos.copy()
-    dev_copy["perdida_flete"] = np.where(
-        dev_copy["COSTO DEVOLUCION FLETE"] > 0,
-        dev_copy["PRECIO FLETE"] + dev_copy["COSTO DEVOLUCION FLETE"],
-        dev_copy["PRECIO FLETE"] * 2,
-    )
-    perdida_devoluciones = int(dev_copy["perdida_flete"].sum())
+        flete_envio_prom = int(np.floor(sub_ent["PRECIO FLETE"].mean())) if n_ent > 0 else 0
+        flete_dev_prom = int(np.floor(sub_dev["COSTO DEVOLUCION FLETE"].mean())) if n_dev > 0 else 0
 
-    # Comisiones
-    comisiones = int(enviados["COMISION"].sum()) if "COMISION" in enviados.columns else 0
+        flete_envio_total = int(sub_ent["PRECIO FLETE"].sum())
+        flete_dev_total = int(sub_dev["COSTO DEVOLUCION FLETE"].sum())
 
-    # Rentabilidad neta
-    rentabilidad_neta = ganancia_entregas - perdida_devoluciones
+        ganancia_total = int(sub_ent["GANANCIA"].sum())
+        rentabilidad = ganancia_total - flete_dev_total
 
-    return {
-        "ingreso_bruto": ingreso_bruto,
-        "costo_productos": costo_productos,
-        "costo_fletes_envio": costo_fletes_envio,
-        "ganancia_entregas": ganancia_entregas,
-        "perdida_devoluciones": perdida_devoluciones,
-        "comisiones": comisiones,
-        "rentabilidad_neta": rentabilidad_neta,
-        "total_envios": len(enviados),
-        "total_entregas": len(entregados),
-        "total_devoluciones": len(devueltos),
-    }
+        carriers.append({
+            "Transportadora": t,
+            "Envíos": n_env,
+            "Entregas": n_ent,
+            "Devoluciones": n_dev,
+            "En Proceso": n_proc,
+            "% Éxito": round(n_ent / n_env * 100, 1) if n_env > 0 else 0,
+            "% Devolución": round(n_dev / n_env * 100, 1) if n_env > 0 else 0,
+            "Flete Envío Prom": flete_envio_prom,
+            "Flete Dev Prom": flete_dev_prom,
+            "Flete Envío Total": flete_envio_total,
+            "Flete Dev Total": flete_dev_total,
+            "Ganancia": ganancia_total,
+            "Rentabilidad": rentabilidad,
+        })
 
-
-def get_city_profitability(df: pd.DataFrame) -> pd.DataFrame:
-    """Rentabilidad por ciudad: ganancia de entregas - pérdida de devoluciones."""
-    enviados = df[df["TIENE_GUIA"]]
-    entregados = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
-    devueltos = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
-
-    # Ganancia por ciudad
-    gan = entregados.groupby("CIUDAD DESTINO").agg(
-        Entregas=("ID", "count"),
-        Ganancia=("GANANCIA", "sum"),
-    ).reset_index()
-
-    # Pérdida por ciudad
-    dev_copy = devueltos.copy()
-    dev_copy["perdida_flete"] = np.where(
-        dev_copy["COSTO DEVOLUCION FLETE"] > 0,
-        dev_copy["PRECIO FLETE"] + dev_copy["COSTO DEVOLUCION FLETE"],
-        dev_copy["PRECIO FLETE"] * 2,
-    )
-    per = dev_copy.groupby("CIUDAD DESTINO").agg(
-        Devoluciones=("ID", "count"),
-        Pérdida=("perdida_flete", "sum"),
-    ).reset_index()
-
-    # Envíos totales por ciudad
-    env = enviados.groupby("CIUDAD DESTINO").agg(
-        Envíos=("ID", "count"),
-    ).reset_index()
-
-    # Merge
-    result = env.merge(gan, on="CIUDAD DESTINO", how="left")
-    result = result.merge(per, on="CIUDAD DESTINO", how="left")
-    result["Entregas"] = result["Entregas"].fillna(0).astype(int)
-    result["Ganancia"] = result["Ganancia"].fillna(0).astype(int)
-    result["Devoluciones"] = result["Devoluciones"].fillna(0).astype(int)
-    result["Pérdida"] = result["Pérdida"].fillna(0).astype(int)
-    result["Rentabilidad"] = result["Ganancia"] - result["Pérdida"]
-    result["% Devolución"] = (result["Devoluciones"] / result["Envíos"] * 100).round(1)
-
-    result = result.sort_values("Rentabilidad", ascending=True)
-    return result
+    return pd.DataFrame(carriers).sort_values("Envíos", ascending=False) if carriers else pd.DataFrame()
 
 
-def get_agent_cancellations(df: pd.DataFrame) -> pd.DataFrame:
+# ============================================================
+# AGENTES / VENDEDORES
+# ============================================================
+
+def get_agent_cancellations(df):
     """Cancelaciones y métricas por agente/vendedor."""
     col_vendedor = "VENDEDOR"
     if col_vendedor not in df.columns:
         return pd.DataFrame()
 
-    # Solo filas con vendedor asignado
     with_agent = df[df[col_vendedor].notna() & (df[col_vendedor].astype(str).str.strip() != "")]
-
     if with_agent.empty:
         return pd.DataFrame()
 
@@ -540,46 +583,48 @@ def get_agent_cancellations(df: pd.DataFrame) -> pd.DataFrame:
     return agents.sort_values("Cancelados", ascending=False)
 
 
-def get_product_search_metrics(df: pd.DataFrame, productos) -> dict:
+# ============================================================
+# BUSCADOR DE PRODUCTOS
+# ============================================================
+
+def get_product_search_metrics(df, productos) -> dict:
     """Métricas detalladas para uno o varios productos seleccionados."""
     filtered = df[df["PRODUCTO"].isin(productos)]
-    enviados = filtered[filtered["TIENE_GUIA"]]
-    entregados = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
-    devueltos = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
+    enviados = _enviados(filtered)
+    ent = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
+    dev = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
     cancelados = filtered[filtered["CATEGORIA"] == "NUNCA ENVIADO"]
 
-    # Pérdida devoluciones
-    dev_copy = devueltos.copy()
-    if not dev_copy.empty:
-        dev_copy["perdida_flete"] = np.where(
-            dev_copy["COSTO DEVOLUCION FLETE"] > 0,
-            dev_copy["PRECIO FLETE"] + dev_copy["COSTO DEVOLUCION FLETE"],
-            dev_copy["PRECIO FLETE"] * 2,
-        )
-        perdida = int(dev_copy["perdida_flete"].sum())
-    else:
-        perdida = 0
-
-    ganancia = int(entregados["GANANCIA"].sum())
+    ganancia = int(ent["GANANCIA"].sum())
+    perdida = int(dev["COSTO DEVOLUCION FLETE"].sum())
+    flete_entregas = int(ent["PRECIO FLETE"].sum())
+    costo_producto = int(ent["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in ent.columns else int(ent["PRECIO PROVEEDOR"].sum())
+    ventas_brutas = int(ent["TOTAL DE LA ORDEN"].sum())
 
     return {
         "total_ordenes": len(filtered),
         "envios": len(enviados),
-        "entregas": len(entregados),
-        "devoluciones": len(devueltos),
+        "entregas": len(ent),
+        "devoluciones": len(dev),
         "cancelados": len(cancelados),
-        "tasa_exito": len(entregados) / len(enviados) if len(enviados) > 0 else 0,
-        "tasa_devolucion": len(devueltos) / len(enviados) if len(enviados) > 0 else 0,
+        "tasa_exito": len(ent) / len(enviados) if len(enviados) > 0 else 0,
+        "tasa_devolucion": len(dev) / len(enviados) if len(enviados) > 0 else 0,
+        "ventas_brutas": ventas_brutas,
+        "costo_producto": costo_producto,
+        "flete_entregas": flete_entregas,
+        "flete_devoluciones": perdida,
         "ganancia_entregas": ganancia,
         "perdida_devoluciones": perdida,
         "rentabilidad": ganancia - perdida,
-        "ingreso_bruto": int(entregados["TOTAL DE LA ORDEN"].sum()),
-        "flete_total": int(enviados["PRECIO FLETE"].sum()),
         "ticket_promedio": int(np.floor(filtered["TOTAL DE LA ORDEN"].mean())) if len(filtered) > 0 else 0,
     }
 
 
-def get_temporal_evolution(df: pd.DataFrame) -> pd.DataFrame:
+# ============================================================
+# EVOLUCIÓN TEMPORAL
+# ============================================================
+
+def get_temporal_evolution(df):
     """Evolución temporal de entregas vs devoluciones por fecha de guía generada."""
     enviados = df[df["TIENE_GUIA"] & df["FECHA GUIA GENERADA"].notna()].copy()
     if enviados.empty:

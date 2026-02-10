@@ -5,35 +5,39 @@ from data_processing.analyzer import get_cost_analysis
 from visualizations.charts import cost_loss_bar
 
 
+def _fmt(val):
+    return f"${val:,}"
+
+
 def render(df):
     """Renderiza la página de costos."""
     costs = get_cost_analysis(df)
 
     st.subheader("Impacto Económico")
+    st.caption("Solo se cobra flete de envío en entregas y flete de devolución en devueltos")
 
     # KPIs de costos
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Costo Total Fletes", f"${costs['costo_fletes']:,}")
-        st.metric("Valor Productos Devueltos", f"${costs['valor_productos_devueltos']:,}")
+        st.metric("Flete Envío (entregas)", _fmt(costs["flete_entregas"]))
     with col2:
-        st.metric("Pérdida Flete Envío (dev)", f"${costs['perdida_flete_envio']:,}")
-        st.metric("Inventario Atascado", f"${costs['valor_inventario_atascado']:,}")
+        st.metric("Flete Devolución (devueltos)", _fmt(costs["flete_devoluciones"]))
     with col3:
-        st.metric("Pérdida Flete Devolución", f"${costs['perdida_flete_devolucion']:,}")
-        st.metric("Ingreso Perdido (ventas)", f"${costs['ingreso_perdido']:,}")
+        st.metric("Fletes Total Pagados", _fmt(costs["fletes_total"]))
 
     st.divider()
 
-    # Resumen
-    st.error(
-        f"**Pérdida Total por Devoluciones (fletes ida + vuelta):** "
-        f"${costs['perdida_total_fletes']:,}"
-    )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Costo Producto (entregas)", _fmt(costs["costo_producto"]))
+    with col2:
+        st.metric("Ingreso Perdido (ventas devueltas)", _fmt(costs["ingreso_perdido"]))
+    with col3:
+        st.metric("Valor Pedidos en Tránsito", _fmt(costs["valor_inventario"]))
 
     st.divider()
 
-    # Top 10 pérdida por ciudad
+    # Top 10 pérdida por ciudad y producto
     col1, col2 = st.columns(2)
 
     with col1:
@@ -41,7 +45,7 @@ def render(df):
         top_cities = costs["top_cities"]
         if not top_cities.empty:
             st.plotly_chart(
-                cost_loss_bar(top_cities, "Top 10 Pérdida por Ciudad", "CIUDAD DESTINO"),
+                cost_loss_bar(top_cities, "Top 10 Pérdida Flete Dev por Ciudad", "CIUDAD DESTINO"),
                 use_container_width=True,
             )
             st.dataframe(
@@ -54,7 +58,7 @@ def render(df):
         top_products = costs["top_products"]
         if not top_products.empty:
             st.plotly_chart(
-                cost_loss_bar(top_products, "Top 10 Pérdida por Producto", "PRODUCTO"),
+                cost_loss_bar(top_products, "Top 10 Pérdida Flete Dev por Producto", "PRODUCTO"),
                 use_container_width=True,
             )
             st.dataframe(

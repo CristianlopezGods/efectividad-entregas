@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data_processing.loader import load_and_clean
 from data_processing.classifier import classify_dataframe, apply_ai_classifications
-from pages import overview, products, clients, cities, temporal, costs, novelties, ai_status, pnl, agents, search
+from pages import overview, products, clients, cities, temporal, costs, novelties, ai_status, pnl, agents, search, carriers
 
 # --- Configuración de la página ---
 st.set_page_config(
@@ -79,6 +79,7 @@ tabs = st.tabs([
     "📦 Productos",
     "👤 Clientes",
     "🏙️ Ciudades",
+    "🚚 Transportadoras",
     "⏱️ Tiempos",
     "💰 Costos",
     "👔 Agentes",
@@ -105,16 +106,19 @@ with tabs[5]:
     cities.render(df)
 
 with tabs[6]:
-    temporal.render(df)
+    carriers.render(df)
 
 with tabs[7]:
-    costs.render(df)
+    temporal.render(df)
 
 with tabs[8]:
-    agents.render(df)
+    costs.render(df)
 
 with tabs[9]:
-    novelties.render(df)
+    agents.render(df)
 
 with tabs[10]:
+    novelties.render(df)
+
+with tabs[11]:
     ai_status.render(df)

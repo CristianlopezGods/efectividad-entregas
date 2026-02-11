@@ -700,8 +700,8 @@ def get_operational_alerts(df):
     """
     hoy = pd.Timestamp(datetime.now().date())
 
-    # Flete sobrecosto: pedidos con flete > umbral
-    flete_sobrecosto = df[df["PRECIO FLETE"] > UMBRAL_FLETE_SOBRECOSTO].copy()
+    # Flete sobrecosto: pedidos ENVIADOS con flete > umbral (solo los que se pagaron)
+    flete_sobrecosto = df[(df["PRECIO FLETE"] > UMBRAL_FLETE_SOBRECOSTO) & (df["TIENE_GUIA"])].copy()
     if not flete_sobrecosto.empty:
         flete_cols = ["ID", "PRODUCTO", "CIUDAD DESTINO", "TRANSPORTADORA", "PRECIO FLETE", "ESTATUS", "CATEGORIA"]
         flete_cols = [c for c in flete_cols if c in flete_sobrecosto.columns]

@@ -1,7 +1,6 @@
 """Página: Alertas Operativas."""
 
 import streamlit as st
-from data_processing.analyzer import get_operational_alerts
 
 
 def _fmt(val):
@@ -10,6 +9,8 @@ def _fmt(val):
 
 def render(df):
     """Renderiza la página de alertas operativas."""
+    from data_processing.analyzer import get_operational_alerts
+
     alerts = get_operational_alerts(df)
 
     st.subheader("Alertas Operativas")

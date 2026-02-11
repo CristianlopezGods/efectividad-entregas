@@ -146,6 +146,18 @@ def get_pnl_general(df):
 
     venta_neta = ventas_brutas - costo_producto - flete_envios
 
+    # Proyección: si todos los pedidos en tránsito se entregaran
+    en_transito = df[df["CATEGORIA"].isin(["EN PROCESO", "GUIA DEMORADA"])]
+    n_en_transito = len(en_transito)
+    col_y_t = _col_y(en_transito)
+    proy_utilidad_transito = int(
+        en_transito["TOTAL DE LA ORDEN"].sum()
+        - en_transito["PRECIO FLETE"].sum()
+        - en_transito[col_y_t].sum()
+    ) if n_en_transito > 0 else 0
+    proy_ventas_transito = int(en_transito["TOTAL DE LA ORDEN"].sum())
+    proy_utilidad_total = utilidad_entregas + proy_utilidad_transito
+
     return {
         "ventas_brutas": ventas_brutas,
         "costo_producto": costo_producto,
@@ -156,6 +168,10 @@ def get_pnl_general(df):
         "total_entregas": len(ent),
         "total_devoluciones": len(dev),
         "total_envios": len(enviados),
+        "proy_en_transito": n_en_transito,
+        "proy_utilidad_transito": proy_utilidad_transito,
+        "proy_ventas_transito": proy_ventas_transito,
+        "proy_utilidad_total": proy_utilidad_total,
     }
 
 

@@ -81,6 +81,36 @@ def render(df):
 
     st.divider()
 
+    # Proyección: si todo en tránsito se entrega
+    st.subheader("Proyección: Si Todo en Tránsito se Entrega")
+    st.caption(
+        f"Actualmente hay **{pnl['proy_en_transito']:,}** pedidos en tránsito. "
+        "Esta proyección muestra la utilidad si todos fueran entregados exitosamente."
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(
+            "Utilidad Actual (entregas)",
+            _fmt(pnl["utilidad_entregas"]),
+            help="R - T - Y de pedidos ya entregados",
+        )
+    with col2:
+        st.metric(
+            "Utilidad Potencial (en tránsito)",
+            _fmt(pnl["proy_utilidad_transito"]),
+            help=f"R - T - Y de {pnl['proy_en_transito']:,} pedidos en tránsito",
+        )
+    with col3:
+        st.metric(
+            "Utilidad Total Proyectada",
+            _fmt(pnl["proy_utilidad_total"]),
+            delta=f"+{_fmt(pnl['proy_utilidad_transito'])} si se entregan todos",
+            delta_color="normal" if pnl["proy_utilidad_transito"] >= 0 else "inverse",
+        )
+
+    st.divider()
+
     # Sección de publicidad
     st.subheader("Análisis con Publicidad")
 

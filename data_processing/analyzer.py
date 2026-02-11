@@ -374,7 +374,17 @@ def get_city_profitability(df):
     for col in ["Entregas", "Ganancia", "Devoluciones", "Pérdida"]:
         result[col] = result[col].fillna(0).astype(int)
     result["Rentabilidad"] = result["Ganancia"] - result["Pérdida"]
+    result["Rent/Envío"] = np.where(
+        result["Envíos"] > 0,
+        np.floor(result["Rentabilidad"] / result["Envíos"]).astype(int),
+        0,
+    )
     result["% Devolución"] = (result["Devoluciones"] / result["Envíos"] * 100).round(1)
+    result["Veredicto"] = result.apply(
+        lambda r: "NO ENVIAR" if r["Rentabilidad"] < 0 and r["Envíos"] >= 5
+        else ("PRECAUCIÓN" if r["% Devolución"] > 30 else "OK"),
+        axis=1,
+    )
     result = result.sort_values("Rentabilidad", ascending=True)
     return result
 

@@ -1,20 +1,30 @@
-"""Página: Análisis por Producto."""
+"""Página: Análisis por Producto (incluye buscador)."""
 
 import streamlit as st
-import pandas as pd
-from data_processing.analyzer import get_product_analysis, get_product_profitability
+import numpy as np
+import plotly.graph_objects as go
+from data_processing.analyzer import (
+    get_product_analysis,
+    get_product_profitability,
+    get_product_search_metrics,
+)
 from visualizations.charts import top_products_bar, profitability_bar
 
 
 def render(df):
     """Renderiza la página de análisis de productos."""
-    tab_dev, tab_rent = st.tabs(["% Devolución", "Rentabilidad Real"])
+    tab_dev, tab_rent, tab_buscar = st.tabs([
+        "% Devolución", "Rentabilidad Real", "Buscador"
+    ])
 
     with tab_dev:
         _render_devolucion(df)
 
     with tab_rent:
         _render_rentabilidad(df)
+
+    with tab_buscar:
+        _render_buscador(df)
 
 
 def _render_devolucion(df):
@@ -125,3 +135,122 @@ def _render_rentabilidad(df):
         "productos_rentabilidad.csv",
         "text/csv",
     )
+
+
+def _render_buscador(df):
+    """Buscador por palabra clave con métricas de rentabilidad."""
+    st.subheader("Buscador de Productos")
+    st.caption("Busca por palabra clave y selecciona para ver rentabilidad combinada")
+
+    all_products = sorted(df["PRODUCTO"].unique().tolist())
+
+    search = st.text_input(
+        "Busca por palabra clave",
+        placeholder="Ej: hidor, linterna, audifono, dron...",
+        key="prod_search_keyword",
+    )
+
+    if search:
+        matches = [p for p in all_products if search.upper() in p.upper()]
+    else:
+        matches = all_products
+
+    if not matches:
+        st.warning(f"No se encontraron productos con '{search}'")
+        return
+
+    selected = st.multiselect(
+        f"Selecciona productos ({len(matches)} encontrados)",
+        options=matches,
+        default=matches if search and len(matches) <= 10 else [],
+        key="prod_search_select",
+    )
+
+    if not selected:
+        if search:
+            st.info(f"Se encontraron **{len(matches)}** productos con '{search}'. Selecciona los que quieras analizar.")
+            for p in matches[:20]:
+                st.write(f"- {p}")
+            if len(matches) > 20:
+                st.caption(f"... y {len(matches) - 20} más")
+        else:
+            st.info("Escribe una palabra clave para buscar productos.")
+        return
+
+    st.divider()
+
+    # Métricas combinadas
+    metrics = get_product_search_metrics(df, selected)
+
+    if len(selected) == 1:
+        st.subheader(f"Métricas: {selected[0]}")
+    else:
+        st.subheader(f"Métricas combinadas ({len(selected)} productos)")
+
+    # KPIs operativos
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Órdenes", f"{metrics['total_ordenes']:,}")
+    with col2:
+        st.metric("Envíos", f"{metrics['envios']:,}")
+    with col3:
+        st.metric("Entregas", f"{metrics['entregas']:,}")
+    with col4:
+        st.metric("Devoluciones", f"{metrics['devoluciones']:,}")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Cancelados", f"{metrics['cancelados']:,}")
+    with col2:
+        st.metric("Tasa Éxito", f"{metrics['tasa_exito']:.1%}")
+    with col3:
+        st.metric("Tasa Devolución", f"{metrics['tasa_devolucion']:.1%}")
+    with col4:
+        st.metric("Ticket Promedio", f"${metrics['ticket_promedio']:,}")
+
+    st.divider()
+
+    # KPIs económicos
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Utilidad Entregas", f"${metrics['ganancia_entregas']:,}")
+    with col2:
+        st.metric("Pérdida Devoluciones", f"${metrics['perdida_devoluciones']:,}")
+    with col3:
+        rent = metrics["rentabilidad"]
+        st.metric(
+            "Rentabilidad",
+            f"${rent:,}",
+            delta="Ganando" if rent >= 0 else "Perdiendo",
+            delta_color="normal" if rent >= 0 else "inverse",
+        )
+
+    st.divider()
+
+    # Gráfico pie
+    fig = go.Figure(go.Pie(
+        labels=["Entregas", "Devoluciones", "Cancelados", "En Proceso"],
+        values=[
+            metrics["entregas"],
+            metrics["devoluciones"],
+            metrics["cancelados"],
+            max(0, metrics["envios"] - metrics["entregas"] - metrics["devoluciones"]),
+        ],
+        marker=dict(colors=["#27ae60", "#e74c3c", "#95a5a6", "#3498db"]),
+        hole=0.4,
+        textinfo="label+percent+value",
+    ))
+    fig.update_layout(
+        title="Distribución de Resultados",
+        height=400,
+        margin=dict(t=40, b=20, l=20, r=20),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Desglose individual si hay múltiples
+    if len(selected) > 1:
+        st.divider()
+        st.subheader("Desglose por Producto")
+        profit = get_product_profitability(df)
+        detail = profit[profit["PRODUCTO"].isin(selected)].reset_index(drop=True)
+        st.dataframe(detail, use_container_width=True)

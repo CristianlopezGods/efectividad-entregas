@@ -27,8 +27,8 @@ def render_kpi_cards(metrics: dict):
 
 
 def render_secondary_kpis(metrics: dict):
-    """Renderiza KPIs secundarios: demorados y atascados."""
-    col1, col2, col3, col4 = st.columns(4)
+    """Renderiza KPIs secundarios: demorados, atascados y guías demoradas."""
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
         st.metric("Nunca Enviados", f"{metrics['nunca_enviados']:,}")
@@ -36,11 +36,16 @@ def render_secondary_kpis(metrics: dict):
         st.metric("En Proceso", f"{metrics['en_proceso']:,}")
     with col3:
         st.metric(
-            "Demorados (>7d)",
+            "Demorados (>6d)",
             f"{metrics['demorados']:,}",
         )
     with col4:
         st.metric(
             "Atascados (>3d)",
             f"{metrics['atascados']:,}",
+        )
+    with col5:
+        st.metric(
+            "Guías Demoradas",
+            f"{metrics.get('guia_demorada', 0):,}",
         )

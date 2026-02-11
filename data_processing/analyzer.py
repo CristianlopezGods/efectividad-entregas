@@ -3,10 +3,13 @@
 REGLAS DE NEGOCIO (dropshipping):
 - Flete de envío (T / PRECIO FLETE) se cobra en TODOS los pedidos enviados (entregados + devueltos + en proceso)
 - Columna U (COSTO DEVOLUCION FLETE) se IGNORA — dato no confiable
+- Columna S (GANANCIA) se IGNORA — dato no confiable, se calcula como R - T - Y
+- Columna COMISION se IGNORA — dato no confiable
 - Si un pedido fue devuelto, la pérdida es el flete T que ya se pagó (envío perdido)
 - NO se cobra flete en pedidos que nunca salieron (pendiente, rechazado, cancelado, guía anulada, indemnización)
-- Costo de producto solo se paga cuando el pedido es ENTREGADO
-- Venta neta = Ventas - Costo producto - Flete envío (todos) - Comisiones - Publicidad
+- Costo de producto (Y) solo se paga cuando el pedido es ENTREGADO
+- Utilidad entrega = R - T - Y (TOTAL DE LA ORDEN - PRECIO FLETE - PRECIO PROVEEDOR X CANTIDAD)
+- Venta neta = Ventas Brutas - Costo producto - Flete envío (todos)
 """
 
 import pandas as pd
@@ -17,6 +20,7 @@ from config import (
     UMBRAL_DEVOLUCIONES_BLOQUEAR,
     UMBRAL_DIAS_DEMORADO,
     UMBRAL_DIAS_ATASCADO,
+    UMBRAL_FLETE_SOBRECOSTO,
     RANGOS_DEMORADOS,
     RANGOS_ATASCADOS,
 )
@@ -35,6 +39,10 @@ def _devueltos(df):
 def _enviados(df):
     return df[df["TIENE_GUIA"]]
 
+def _col_y(df):
+    """Retorna el nombre de la columna de costo producto."""
+    return "PRECIO PROVEEDOR X CANTIDAD" if "PRECIO PROVEEDOR X CANTIDAD" in df.columns else "PRECIO PROVEEDOR"
+
 
 # ============================================================
 # GENERAL
@@ -52,6 +60,7 @@ def get_general_metrics(df):
     n_en_proceso = len(df[df["CATEGORIA"] == "EN PROCESO"])
     n_nunca = len(df[df["CATEGORIA"] == "NUNCA ENVIADO"])
     n_pendientes = len(df[df["CATEGORIA"] == "PENDIENTE ATASCADO"])
+    n_guia_demorada = len(df[df["CATEGORIA"] == "GUIA DEMORADA"])
 
     tasa_conversion = n_enviados / total if total > 0 else 0
     tasa_exito = n_entregados / n_enviados if n_enviados > 0 else 0
@@ -87,6 +96,7 @@ def get_general_metrics(df):
         "en_proceso": n_en_proceso,
         "nunca_enviados": n_nunca,
         "pendientes": n_pendientes,
+        "guia_demorada": n_guia_demorada,
         "tasa_conversion": tasa_conversion,
         "tasa_exito": tasa_exito,
         "tasa_devolucion": tasa_devolucion,
@@ -113,33 +123,35 @@ def get_pnl_general(df):
     """Resumen de ganancias y pérdidas generales del negocio.
 
     Flete envío (T) se cobra en TODOS los enviados.
-    Columna U se ignora. Pérdida devoluciones = flete T ya pagado.
+    Columna U se ignora. Columna S (GANANCIA) se ignora. COMISION se ignora.
     Costo producto solo en entregas (dropshipping).
+    Utilidad = R - T - Y (solo entregas).
+    Venta neta = Ventas Brutas - Costo producto - Flete envío (todos).
     """
     enviados = _enviados(df)
     ent = _entregados(df)
     dev = _devueltos(df)
 
     ventas_brutas = int(ent["TOTAL DE LA ORDEN"].sum())
-    costo_producto = int(ent["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in ent.columns else int(ent["PRECIO PROVEEDOR"].sum())
+    col_y = _col_y(ent)
+    costo_producto = int(ent[col_y].sum())
 
     # T se cobra en TODOS los enviados (entregados + devueltos + en proceso)
     flete_envios = int(enviados["PRECIO FLETE"].sum())
     # Pérdida en devueltos = flete T que se pagó pero no generó venta
     flete_devueltos = int(dev["PRECIO FLETE"].sum())
 
-    comisiones = int(enviados["COMISION"].sum()) if "COMISION" in enviados.columns else 0
-    ganancia_col = int(ent["GANANCIA"].sum())
+    # Utilidad calculada de entregas (R - T - Y)
+    utilidad_entregas = int(ent["UTILIDAD"].sum())
 
-    venta_neta = ventas_brutas - costo_producto - flete_envios - comisiones
+    venta_neta = ventas_brutas - costo_producto - flete_envios
 
     return {
         "ventas_brutas": ventas_brutas,
         "costo_producto": costo_producto,
         "flete_envios": flete_envios,
         "flete_devueltos": flete_devueltos,
-        "comisiones": comisiones,
-        "ganancia_col": ganancia_col,
+        "utilidad_entregas": utilidad_entregas,
         "venta_neta": venta_neta,
         "total_entregas": len(ent),
         "total_devoluciones": len(dev),
@@ -191,7 +203,7 @@ def get_product_analysis(df):
 def get_product_profitability(df):
     """Rentabilidad real por producto.
 
-    Ganancia = GANANCIA de entregas exitosas
+    Ganancia = R - T - Y por producto para entregados (UTILIDAD calculada)
     Pérdida = flete T pagado en devoluciones (envío perdido)
     Rentabilidad = Ganancia - Pérdida
     """
@@ -199,9 +211,16 @@ def get_product_profitability(df):
     entregados = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
     devueltos = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
 
-    # Ganancia por producto
-    gan = entregados.groupby("PRODUCTO")["GANANCIA"].sum().reset_index()
-    gan.columns = ["PRODUCTO", "Ganancia Entregas"]
+    col_y = _col_y(entregados)
+
+    # Ganancia por producto: R - T - Y
+    gan = entregados.groupby("PRODUCTO").agg(
+        Ingresos=("TOTAL DE LA ORDEN", "sum"),
+        Flete=("PRECIO FLETE", "sum"),
+        Costo_Prod=(col_y, "sum"),
+    ).reset_index()
+    gan["Ganancia Entregas"] = (gan["Ingresos"] - gan["Flete"] - gan["Costo_Prod"]).astype(int)
+    gan = gan[["PRODUCTO", "Ganancia Entregas"]]
 
     # Pérdida por producto: flete T pagado en devoluciones
     per = devueltos.groupby("PRODUCTO")["PRECIO FLETE"].sum().reset_index()
@@ -309,16 +328,21 @@ def get_city_analysis(df):
 def get_city_profitability(df):
     """Rentabilidad por ciudad.
 
-    Ganancia = GANANCIA de entregas
+    Ganancia = R - T - Y de entregas (calculada, no GANANCIA)
     Pérdida = flete T pagado en devoluciones (envío perdido)
     """
     ent = _entregados(df)
     dev = _devueltos(df)
+    col_y = _col_y(ent)
 
     gan = ent.groupby("CIUDAD DESTINO").agg(
         Entregas=("ID", "count"),
-        Ganancia=("GANANCIA", "sum"),
+        Ingresos=("TOTAL DE LA ORDEN", "sum"),
+        Flete=("PRECIO FLETE", "sum"),
+        Costo_Prod=(col_y, "sum"),
     ).reset_index()
+    gan["Ganancia"] = (gan["Ingresos"] - gan["Flete"] - gan["Costo_Prod"]).astype(int)
+    gan = gan[["CIUDAD DESTINO", "Entregas", "Ganancia"]]
 
     per = dev.groupby("CIUDAD DESTINO").agg(
         Devoluciones=("ID", "count"),
@@ -407,7 +431,8 @@ def get_cost_analysis(df):
     flete_envios = int(enviados["PRECIO FLETE"].sum())
     flete_devueltos = int(dev["PRECIO FLETE"].sum())
 
-    costo_producto = int(ent["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in ent.columns else int(ent["PRECIO PROVEEDOR"].sum())
+    col_y = _col_y(ent)
+    costo_producto = int(ent[col_y].sum())
     ingreso_perdido = int(dev["TOTAL DE LA ORDEN"].sum())
 
     # Inventario atascado
@@ -505,8 +530,12 @@ def get_novelty_analysis(df):
 # ============================================================
 
 def get_carrier_analysis(df):
-    """Análisis detallado por transportadora: fletes, tasas, costos."""
+    """Análisis detallado por transportadora: fletes, tasas, costos.
+
+    Ganancia usa R - T - Y (no columna GANANCIA).
+    """
     enviados = _enviados(df)
+    col_y = _col_y(df)
 
     carriers = []
     for t in df["TRANSPORTADORA"].unique():
@@ -529,7 +558,12 @@ def get_carrier_analysis(df):
         flete_envio_total = int(sub["PRECIO FLETE"].sum())
         flete_dev_total = int(sub_dev["PRECIO FLETE"].sum())
 
-        ganancia_total = int(sub_ent["GANANCIA"].sum())
+        # Ganancia = R - T - Y de entregados
+        ganancia_total = int(
+            sub_ent["TOTAL DE LA ORDEN"].sum()
+            - sub_ent["PRECIO FLETE"].sum()
+            - sub_ent[col_y].sum()
+        )
         rentabilidad = ganancia_total - flete_dev_total
 
         carriers.append({
@@ -552,59 +586,31 @@ def get_carrier_analysis(df):
 
 
 # ============================================================
-# AGENTES / VENDEDORES
-# ============================================================
-
-def get_agent_cancellations(df):
-    """Cancelaciones y métricas por agente/vendedor."""
-    col_vendedor = "VENDEDOR"
-    if col_vendedor not in df.columns:
-        return pd.DataFrame()
-
-    with_agent = df[df[col_vendedor].notna() & (df[col_vendedor].astype(str).str.strip() != "")]
-    if with_agent.empty:
-        return pd.DataFrame()
-
-    agents = with_agent.groupby(col_vendedor).agg(
-        Total_Pedidos=("ID", "count"),
-        Cancelados=("CATEGORIA", lambda x: (x == "NUNCA ENVIADO").sum()),
-        Enviados=("TIENE_GUIA", "sum"),
-        Entregados=("CATEGORIA", lambda x: (x == "ENTREGADO").sum()),
-        Devoluciones=("CATEGORIA", lambda x: (x == "DEVOLUCION").sum()),
-    ).reset_index()
-
-    agents.rename(columns={col_vendedor: "Agente"}, inplace=True)
-    agents["% Cancelación"] = (agents["Cancelados"] / agents["Total_Pedidos"] * 100).round(1)
-    agents["% Éxito"] = np.where(
-        agents["Enviados"] > 0,
-        (agents["Entregados"] / agents["Enviados"] * 100).round(1),
-        0,
-    )
-    agents["% Devolución"] = np.where(
-        agents["Enviados"] > 0,
-        (agents["Devoluciones"] / agents["Enviados"] * 100).round(1),
-        0,
-    )
-
-    return agents.sort_values("Cancelados", ascending=False)
-
-
-# ============================================================
 # BUSCADOR DE PRODUCTOS
 # ============================================================
 
 def get_product_search_metrics(df, productos) -> dict:
-    """Métricas detalladas para uno o varios productos seleccionados."""
+    """Métricas detalladas para uno o varios productos seleccionados.
+
+    Ganancia usa R - T - Y (no columna GANANCIA).
+    """
     filtered = df[df["PRODUCTO"].isin(productos)]
     enviados = _enviados(filtered)
     ent = enviados[enviados["CATEGORIA"] == "ENTREGADO"]
     dev = enviados[enviados["CATEGORIA"] == "DEVOLUCION"]
     cancelados = filtered[filtered["CATEGORIA"] == "NUNCA ENVIADO"]
 
-    ganancia = int(ent["GANANCIA"].sum())
+    col_y = _col_y(ent)
+
+    # Ganancia = R - T - Y de entregados
+    ganancia = int(
+        ent["TOTAL DE LA ORDEN"].sum()
+        - ent["PRECIO FLETE"].sum()
+        - ent[col_y].sum()
+    )
     perdida = int(dev["PRECIO FLETE"].sum())
     flete_envios = int(enviados["PRECIO FLETE"].sum())
-    costo_producto = int(ent["PRECIO PROVEEDOR X CANTIDAD"].sum()) if "PRECIO PROVEEDOR X CANTIDAD" in ent.columns else int(ent["PRECIO PROVEEDOR"].sum())
+    costo_producto = int(ent[col_y].sum())
     ventas_brutas = int(ent["TOTAL DE LA ORDEN"].sum())
 
     return {
@@ -647,3 +653,57 @@ def get_temporal_evolution(df):
 
     evolution["Fecha"] = pd.to_datetime(evolution["Fecha"])
     return evolution.sort_values("Fecha")
+
+
+# ============================================================
+# ALERTAS OPERATIVAS
+# ============================================================
+
+def get_operational_alerts(df):
+    """Retorna dict con DataFrames de alertas operativas.
+
+    - flete_sobrecosto: pedidos donde T > $20,000
+    - guia_demorada: pedidos CATEGORIA == "GUIA DEMORADA"
+    - transito_demorado: en proceso >6 días desde FECHA GUIA GENERADA
+    """
+    hoy = pd.Timestamp(datetime.now().date())
+
+    # Flete sobrecosto: pedidos con flete > umbral
+    flete_sobrecosto = df[df["PRECIO FLETE"] > UMBRAL_FLETE_SOBRECOSTO].copy()
+    if not flete_sobrecosto.empty:
+        flete_cols = ["ID", "PRODUCTO", "CIUDAD DESTINO", "TRANSPORTADORA", "PRECIO FLETE", "ESTATUS", "CATEGORIA"]
+        flete_cols = [c for c in flete_cols if c in flete_sobrecosto.columns]
+        flete_sobrecosto = flete_sobrecosto[flete_cols].sort_values("PRECIO FLETE", ascending=False)
+
+    # Guías demoradas: categoría asignada en classifier
+    guia_demorada = df[df["CATEGORIA"] == "GUIA DEMORADA"].copy()
+    if not guia_demorada.empty:
+        if "FECHA GUIA GENERADA" in guia_demorada.columns and "FECHA DE REPORTE" in guia_demorada.columns:
+            guia_demorada["Días Sin Despacho"] = (
+                guia_demorada["FECHA DE REPORTE"] - guia_demorada["FECHA GUIA GENERADA"]
+            ).dt.days
+        guia_cols = ["ID", "PRODUCTO", "CIUDAD DESTINO", "TRANSPORTADORA", "FECHA GUIA GENERADA", "ESTATUS"]
+        if "Días Sin Despacho" in guia_demorada.columns:
+            guia_cols.append("Días Sin Despacho")
+        guia_cols = [c for c in guia_cols if c in guia_demorada.columns]
+        guia_demorada = guia_demorada[guia_cols]
+        if "Días Sin Despacho" in guia_demorada.columns:
+            guia_demorada = guia_demorada.sort_values("Días Sin Despacho", ascending=False)
+
+    # Tránsito demorado: en proceso >6 días
+    en_proceso = df[(df["TIENE_GUIA"]) & (df["CATEGORIA"] == "EN PROCESO")].copy()
+    transito_demorado = pd.DataFrame()
+    if not en_proceso.empty and en_proceso["FECHA GUIA GENERADA"].notna().any():
+        en_proceso["Días en Tránsito"] = (hoy - en_proceso["FECHA GUIA GENERADA"]).dt.days
+        transito_demorado = en_proceso[en_proceso["Días en Tránsito"] > UMBRAL_DIAS_DEMORADO].copy()
+        if not transito_demorado.empty:
+            trans_cols = ["ID", "PRODUCTO", "ESTATUS", "CIUDAD DESTINO", "TRANSPORTADORA",
+                          "FECHA GUIA GENERADA", "Días en Tránsito"]
+            trans_cols = [c for c in trans_cols if c in transito_demorado.columns]
+            transito_demorado = transito_demorado[trans_cols].sort_values("Días en Tránsito", ascending=False)
+
+    return {
+        "flete_sobrecosto": flete_sobrecosto,
+        "guia_demorada": guia_demorada,
+        "transito_demorado": transito_demorado,
+    }

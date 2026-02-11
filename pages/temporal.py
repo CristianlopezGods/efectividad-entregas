@@ -12,7 +12,7 @@ def render(df):
     tab_dem, tab_atas = st.tabs(["Enviados Demorados", "Atascados en Pendiente"])
 
     with tab_dem:
-        st.subheader("Envíos Demorados (>7 días en tránsito)")
+        st.subheader("Envíos Demorados (>6 días en tránsito)")
 
         rangos = analysis["rangos_demorados"]
         detalle = analysis["detalle_demorados"]

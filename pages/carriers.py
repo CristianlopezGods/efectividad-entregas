@@ -34,7 +34,7 @@ def render(df):
                 st.metric("Flete Envío Prom", _fmt(row["Flete Envío Prom"]))
                 st.metric("Flete Dev Prom", _fmt(row["Flete Dev Prom"]))
             with col4:
-                st.metric("Ganancia Total", _fmt(row["Ganancia"]))
+                st.metric("Utilidad Entregas", _fmt(row["Ganancia"]))
                 st.metric("Rentabilidad", _fmt(row["Rentabilidad"]),
                            delta="Positiva" if row["Rentabilidad"] >= 0 else "Negativa",
                            delta_color="normal" if row["Rentabilidad"] >= 0 else "inverse")

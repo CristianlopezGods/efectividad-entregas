@@ -86,7 +86,7 @@ def render(df):
     # KPIs económicos
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Ganancia Entregas", f"${metrics['ganancia_entregas']:,}")
+        st.metric("Utilidad Entregas", f"${metrics['ganancia_entregas']:,}")
     with col2:
         st.metric("Pérdida Devoluciones", f"${metrics['perdida_devoluciones']:,}")
     with col3:

@@ -8,6 +8,7 @@ from config import (
     ESTATUS_DEVOLUCION,
     ESTATUS_ENTREGADO,
     ESTATUS_EN_PROCESO,
+    UMBRAL_DIAS_GUIA_DEMORADA,
 )
 
 
@@ -57,6 +58,30 @@ def classify_status(estatus: str, tiene_guia: bool) -> str:
     return "DESCONOCIDO"
 
 
+def _compute_utilidad(df: pd.DataFrame) -> pd.DataFrame:
+    """Calcula columna UTILIDAD (reemplaza GANANCIA no confiable).
+
+    - ENTREGADO: R - T - Y  (TOTAL DE LA ORDEN - PRECIO FLETE - PRECIO PROVEEDOR X CANTIDAD)
+    - DEVOLUCION: -T  (flete perdido)
+    - Otros: 0
+    """
+    col_y = "PRECIO PROVEEDOR X CANTIDAD" if "PRECIO PROVEEDOR X CANTIDAD" in df.columns else "PRECIO PROVEEDOR"
+
+    df["UTILIDAD"] = 0
+
+    mask_ent = df["CATEGORIA"] == "ENTREGADO"
+    df.loc[mask_ent, "UTILIDAD"] = (
+        df.loc[mask_ent, "TOTAL DE LA ORDEN"]
+        - df.loc[mask_ent, "PRECIO FLETE"]
+        - df.loc[mask_ent, col_y]
+    ).astype(int)
+
+    mask_dev = df["CATEGORIA"] == "DEVOLUCION"
+    df.loc[mask_dev, "UTILIDAD"] = (-df.loc[mask_dev, "PRECIO FLETE"]).astype(int)
+
+    return df
+
+
 def classify_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Clasifica todos los estatus del DataFrame."""
     df = df.copy()
@@ -64,6 +89,21 @@ def classify_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         lambda row: classify_status(row["ESTATUS"], row["TIENE_GUIA"]),
         axis=1,
     )
+
+    # Guías impresas hace >3 días sin movimiento = GUIA DEMORADA
+    if "FECHA GUIA GENERADA" in df.columns and "FECHA DE REPORTE" in df.columns:
+        mask = (
+            (df["ESTATUS"] == "GUIA_GENERADA")
+            & (df["TIENE_GUIA"])
+            & (df["FECHA GUIA GENERADA"].notna())
+            & (df["FECHA DE REPORTE"].notna())
+            & ((df["FECHA DE REPORTE"] - df["FECHA GUIA GENERADA"]).dt.days > UMBRAL_DIAS_GUIA_DEMORADA)
+        )
+        df.loc[mask, "CATEGORIA"] = "GUIA DEMORADA"
+
+    # Calcular UTILIDAD (reemplaza GANANCIA)
+    df = _compute_utilidad(df)
+
     return df
 
 
@@ -90,10 +130,11 @@ def classify_with_ai(statuses: list, api_key: str) -> dict:
         statuses_text = "\n".join(f"- {s}" for s in statuses)
         prompt = f"""Eres un experto en logística de e-commerce en Colombia (plataforma Dropi).
 Clasifica cada uno de estos estatus de orden en UNA de estas categorías:
-- NUNCA_ENVIADO: La orden nunca fue enviada (cancelada, rechazada, sin guía)
+- NUNCA_ENVIADO: La orden nunca fue enviada (cancelada, rechazada, sin guía, guía anulada, indemnización)
 - DEVOLUCION: El paquete fue devuelto o está en proceso de devolución
 - ENTREGADO: El paquete fue entregado exitosamente al cliente
 - EN_PROCESO: El paquete está en tránsito o en algún punto del proceso de envío
+- GUIA_DEMORADA: La guía fue generada pero no ha sido despachada en más de 3 días
 
 Estatus a clasificar:
 {statuses_text}
@@ -124,6 +165,7 @@ Sin explicaciones adicionales."""
             "DEVOLUCION": "DEVOLUCION",
             "ENTREGADO": "ENTREGADO",
             "EN_PROCESO": "EN PROCESO",
+            "GUIA_DEMORADA": "GUIA DEMORADA",
         }
 
         return {

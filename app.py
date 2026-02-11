@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data_processing.loader import load_and_clean
 from data_processing.classifier import classify_dataframe, apply_ai_classifications
-from pages import overview, products, clients, cities, temporal, costs, novelties, ai_status, pnl, agents, search, carriers
+from pages import overview, products, clients, cities, temporal, costs, novelties, ai_status, pnl, search, carriers, alerts
 
 # --- Configuración de la página ---
 st.set_page_config(
@@ -54,6 +54,7 @@ if not uploaded_file:
     - **Pedidos demorados** y atascados
     - **Impacto económico** de las devoluciones
     - **Novedades** y su tasa de resolución
+    - **Alertas operativas** (flete sobrecosto, guías demoradas, tránsito lento)
 
     **Para comenzar**, sube tu archivo Excel de órdenes en la barra lateral.
     """)
@@ -73,18 +74,18 @@ if st.session_state.get("apply_ai") and st.session_state.get("ai_classifications
 
 # --- Tabs de navegación ---
 tabs = st.tabs([
-    "📊 Resumen",
-    "💵 P&L General",
-    "🔍 Buscador",
-    "📦 Productos",
-    "👤 Clientes",
-    "🏙️ Ciudades",
-    "🚚 Transportadoras",
-    "⏱️ Tiempos",
-    "💰 Costos",
-    "👔 Agentes",
-    "⚠️ Novedades",
-    "🤖 IA - Estatus",
+    "📊 Resumen",           # 0
+    "💵 P&L General",       # 1
+    "🔍 Buscador",          # 2
+    "📦 Productos",         # 3
+    "👤 Clientes",          # 4
+    "🏙️ Ciudades",         # 5
+    "🚚 Transportadoras",   # 6
+    "⏱️ Tiempos",           # 7
+    "💰 Costos",            # 8
+    "🚨 Alertas",           # 9
+    "⚠️ Novedades",         # 10
+    "🤖 IA - Estatus",      # 11
 ])
 
 with tabs[0]:
@@ -115,7 +116,7 @@ with tabs[8]:
     costs.render(df)
 
 with tabs[9]:
-    agents.render(df)
+    alerts.render(df)
 
 with tabs[10]:
     novelties.render(df)

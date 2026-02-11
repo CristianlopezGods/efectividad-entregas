@@ -8,6 +8,9 @@ ESTATUS_NUNCA_ENVIADO = [
     "RECHAZADO",
     "ADMITIDA",
     "PENDIENTE CONFIRMACION",
+    "GUIA_ANULADA",
+    "EN PROCESO DE INDEMNIZACION",
+    "INDEMNIZADO",
 ]
 
 ESTATUS_PENDIENTE_ATASCADO = [
@@ -27,7 +30,6 @@ ESTATUS_ENTREGADO = [
 
 ESTATUS_EN_PROCESO = [
     "GUIA_GENERADA",
-    "GUIA_ANULADA",
     "RECOGIDO POR DROPI",
     "PREPARADO PARA TRANSPORTADORA",
     "EN BODEGA DROPI",
@@ -53,7 +55,6 @@ ESTATUS_EN_PROCESO = [
     "EN RUTA",
     "EN REEXPEDICION",
     "ENTREGADA A CONEXIONES",
-    "EN PROCESO DE INDEMNIZACION",
     "EN PUNTO DROOP",
 ]
 
@@ -64,6 +65,7 @@ CATEGORIAS = [
     "DEVOLUCION",
     "ENTREGADO",
     "EN PROCESO",
+    "GUIA DEMORADA",
     "DESCONOCIDO",
     "ERROR DE DATOS",
 ]
@@ -75,19 +77,22 @@ COLORES_CATEGORIAS = {
     "DEVOLUCION": "#e74c3c",
     "ENTREGADO": "#27ae60",
     "EN PROCESO": "#3498db",
+    "GUIA DEMORADA": "#e67e22",
     "DESCONOCIDO": "#9b59b6",
-    "ERROR DE DATOS": "#e67e22",
+    "ERROR DE DATOS": "#7f8c8d",
 }
 
 # --- Umbrales de Negocio ---
 UMBRAL_DEVOLUCION_PAUSAR = 0.30  # >30% devolución = pausar producto
 UMBRAL_DEVOLUCIONES_BLOQUEAR = 3  # 3+ devoluciones = bloquear cliente
-UMBRAL_DIAS_DEMORADO = 7  # >7 días = envío demorado
+UMBRAL_DIAS_DEMORADO = 6  # >6 días = envío demorado
 UMBRAL_DIAS_ATASCADO = 3  # >3 días = pedido atascado en pendiente
+UMBRAL_DIAS_GUIA_DEMORADA = 3  # guía impresa >3d sin despacho
+UMBRAL_FLETE_SOBRECOSTO = 20000  # flete > $20,000 = alerta
 
 # Rangos para análisis temporal
 RANGOS_DEMORADOS = [
-    (8, 10, "8-10 días"),
+    (7, 10, "7-10 días"),
     (11, 15, "11-15 días"),
     (16, 20, "16-20 días"),
     (21, 30, "21-30 días"),
@@ -111,9 +116,7 @@ COLUMNAS_REQUERIDAS = [
     "CIUDAD DESTINO",
     "TRANSPORTADORA",
     "TOTAL DE LA ORDEN",
-    "GANANCIA",
     "PRECIO FLETE",
-    "COSTO DEVOLUCION FLETE",
     "PRECIO PROVEEDOR",
     "PRODUCTO",
     "CANTIDAD",
@@ -124,8 +127,6 @@ COLUMNAS_REQUERIDAS = [
 COLUMNAS_MONETARIAS = [
     "TOTAL DE LA ORDEN",
     "PRECIO FLETE",
-    "COSTO DEVOLUCION FLETE",
-    "GANANCIA",
     "PRECIO PROVEEDOR",
     "PRECIO PROVEEDOR X CANTIDAD",
 ]

@@ -17,11 +17,12 @@ def render(df):
     st.subheader("Estado de Resultados (P&L)")
 
     # KPIs principales
+    costos_resueltos = pnl["costo_producto"] + pnl["flete_entregados"] + pnl["flete_devueltos"]
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Ventas Brutas (entregas)", _fmt(pnl["ventas_brutas"]))
     with col2:
-        st.metric("Costos Totales", _fmt(pnl["costo_producto"] + pnl["flete_envios"]))
+        st.metric("Costos Totales", _fmt(costos_resueltos))
     with col3:
         st.metric(
             "Venta Neta (sin publicidad)",
@@ -43,21 +44,42 @@ def render(df):
     with col2:
         st.subheader("Costos")
         st.metric("Costo Producto (solo entregas)", _fmt(pnl["costo_producto"]))
-        st.metric("Flete Envío (todos los envíos)", _fmt(pnl["flete_envios"]))
+        st.metric("Flete Entregas", _fmt(pnl["flete_entregados"]),
+                  help="Flete pagado en pedidos entregados exitosamente")
+        st.metric("Flete Devoluciones (pérdida)", _fmt(pnl["flete_devueltos"]),
+                  help="Flete pagado en pedidos devueltos — dinero perdido")
         st.caption(f"{pnl['total_envios']:,} envíos — {pnl['total_devoluciones']:,} devoluciones")
-        st.caption(f"Flete perdido en devoluciones: {_fmt(pnl['flete_devueltos'])}")
+
+    st.divider()
+
+    # Desglose de flete
+    st.subheader("Desglose de Flete")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Flete Entregas", _fmt(pnl["flete_entregados"]),
+                  help="Costo de envío de pedidos entregados")
+    with col2:
+        st.metric("Flete Devoluciones", _fmt(pnl["flete_devueltos"]),
+                  help="Costo de envío de pedidos devueltos (pérdida pura)")
+    with col3:
+        st.metric("Flete en Tránsito", _fmt(pnl["flete_en_transito"]),
+                  help="Flete de pedidos aún en proceso (pendiente de resultado)")
+    with col4:
+        st.metric("Flete Total Pagado", _fmt(pnl["flete_total"]),
+                  help="Suma de todo el flete de todos los envíos")
 
     st.divider()
 
     # Gráfico waterfall
-    labels = ["Ventas Brutas", "Costo Producto", "Flete Envío", "Venta Neta"]
+    labels = ["Ventas Brutas", "Costo Producto", "Flete Entregas", "Flete Devoluciones", "Venta Neta"]
     values = [
         pnl["ventas_brutas"],
         -pnl["costo_producto"],
-        -pnl["flete_envios"],
+        -pnl["flete_entregados"],
+        -pnl["flete_devueltos"],
         pnl["venta_neta"],
     ]
-    measures = ["absolute", "relative", "relative", "total"]
+    measures = ["absolute", "relative", "relative", "relative", "total"]
 
     fig = go.Figure(go.Waterfall(
         name="P&L",

@@ -136,18 +136,22 @@ def get_pnl_general(df):
     col_y = _col_y(ent)
     costo_producto = int(ent[col_y].sum())
 
-    # T se cobra en TODOS los enviados (entregados + devueltos + en proceso)
-    flete_envios = int(enviados["PRECIO FLETE"].sum())
-    # Pérdida en devueltos = flete T que se pagó pero no generó venta
+    # Flete desglosado por categoría
+    flete_entregados = int(ent["PRECIO FLETE"].sum())
     flete_devueltos = int(dev["PRECIO FLETE"].sum())
+    en_transito = df[df["CATEGORIA"].isin(["EN PROCESO", "GUIA DEMORADA"])]
+    flete_en_transito = int(en_transito["PRECIO FLETE"].sum())
+    flete_total = int(enviados["PRECIO FLETE"].sum())
 
     # Utilidad calculada de entregas (R - T - Y)
     utilidad_entregas = int(ent["UTILIDAD"].sum())
 
-    venta_neta = ventas_brutas - costo_producto - flete_envios
+    # Venta neta real: solo costos de pedidos resueltos (entregados + devueltos)
+    # Flete entregados = costo asociado a ventas realizadas
+    # Flete devueltos = pérdida pura (envío sin venta)
+    venta_neta = ventas_brutas - costo_producto - flete_entregados - flete_devueltos
 
     # Proyección: si todos los pedidos en tránsito se entregaran
-    en_transito = df[df["CATEGORIA"].isin(["EN PROCESO", "GUIA DEMORADA"])]
     n_en_transito = len(en_transito)
     col_y_t = _col_y(en_transito)
     proy_utilidad_transito = int(
@@ -161,8 +165,10 @@ def get_pnl_general(df):
     return {
         "ventas_brutas": ventas_brutas,
         "costo_producto": costo_producto,
-        "flete_envios": flete_envios,
+        "flete_entregados": flete_entregados,
         "flete_devueltos": flete_devueltos,
+        "flete_en_transito": flete_en_transito,
+        "flete_total": flete_total,
         "utilidad_entregas": utilidad_entregas,
         "venta_neta": venta_neta,
         "total_entregas": len(ent),
